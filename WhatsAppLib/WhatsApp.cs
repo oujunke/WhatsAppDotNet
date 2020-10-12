@@ -21,7 +21,7 @@ using ImageMessage = Proto.ImageMessage;
 
 namespace WhatsAppLib
 {
-    public class WhatsApp
+    public class WhatsApp : IDisposable
     {
         #region 公有事件    Event
         /// <summary>
@@ -96,15 +96,19 @@ namespace WhatsAppLib
         }
         #endregion
         #region 公有方法    public method
+        public bool Connect()
+        {
+            _webSocket.ConnectAsync(new Uri("wss://web.whatsapp.com/ws"), CancellationToken.None).Wait();
+            Receive(ReceiveModel.GetReceiveModel());
+            Send("?,,");
+            return true;
+        }
         /// <summary>
         /// 登录,需要监听LoginScanCodeEvent,和LoginSuccessEvent事件  To log in, you need to monitor the LoginScanCodeEvent and LoginSuccessEvent events
         /// </summary>
         public void Login()
         {
-            var task = _webSocket.ConnectAsync(new Uri("wss://web.whatsapp.com/ws"), CancellationToken.None);
-            task.Wait();
-            Receive(ReceiveModel.GetReceiveModel());
-            Send("?,,");
+            _snapReceiveDictionary.Clear();
             if (Session == null)
             {
                 Session = new SessionInfo();
@@ -116,7 +120,6 @@ namespace WhatsAppLib
             else
             {
                 ReLogin();
-                //SendJson("[\"admin\",\"test\"]");
             }
         }
         /// <summary>
@@ -196,7 +199,7 @@ namespace WhatsAppLib
         }
         private byte[] Download(string url, byte[] mediaKey, string info)
         {
-            var webClient = new WebClient()
+            var webClient = new XWebClient()
             {
                 Encoding = Encoding.UTF8,
                 Proxy = WebProxy,
@@ -232,7 +235,7 @@ namespace WhatsAppLib
             uploadResponse.MediaKey = GetRandom(32);
             var mk = GetMediaKeys(uploadResponse.MediaKey, MediaImage);
             var enc = data.AesCbcEncrypt(mk.CipherKey, mk.Iv);
-            var mac = (mk.Iv.Concat(data).ToArray()).HMACSHA256_Encrypt(mk.MacKey);
+            var mac = (mk.Iv.Concat(enc).ToArray()).HMACSHA256_Encrypt(mk.MacKey).Take(10);
             uploadResponse.FileSha256 = data.SHA256_Encrypt();
             var joinData = enc.Concat(mac).ToArray();
             uploadResponse.FileEncSha256 = joinData.SHA256_Encrypt();
@@ -241,9 +244,9 @@ namespace WhatsAppLib
             {
                 return null;
             }
-            var token = Convert.ToBase64String(uploadResponse.FileEncSha256);
+            var token = Convert.ToBase64String(uploadResponse.FileEncSha256).Replace("+", "-").Replace("/", "_");
             var url = $"https://{mediaConnResponse.MediaConn.Hosts[0].Hostname}{MediaTypeMap[info]}/{token}?auth={mediaConnResponse.MediaConn.Auth}&token={token}";
-            WebClient webClient = new WebClient
+            WebClient webClient = new XWebClient
             {
                 Encoding = Encoding.UTF8,
                 Proxy = WebProxy
@@ -260,10 +263,10 @@ namespace WhatsAppLib
             MediaConnResponse connResponse = null;
             var tag = SendJson("[\"query\",\"mediaConn\"]");
             _snapReceiveDictionary.Add(tag, rm =>
-             {
-                 connResponse = JsonConvert.DeserializeObject<MediaConnResponse>(rm.Body);
-                 return true;
-             });
+            {
+                connResponse = JsonConvert.DeserializeObject<MediaConnResponse>(rm.Body);
+                return true;
+            });
             for (int i = 0; i < 1000; i++)
             {
                 if (connResponse != null)
@@ -283,7 +286,7 @@ namespace WhatsAppLib
             }
             if (webMessage.MessageTimestamp == 0)
             {
-                webMessage.MessageTimestamp = (ulong)(DateTime.Now.GetTimeStampLong() / 1000);
+                webMessage.MessageTimestamp = (ulong)DateTime.Now.GetTimeStampLong();
             }
             webMessage.Key.FromMe = true;
             webMessage.Status = WebMessageInfo.Types.WEB_MESSAGE_INFO_STATUS.Error;
@@ -345,8 +348,8 @@ namespace WhatsAppLib
         private void ReLogin()
         {
             _snapReceiveDictionary.Add("s1", LoginResponseHandle);
-            SendJson($"[\"admin\",\"login\",\"{Session.ClientToken}\",\"{Session.ServerToken}\",\"{Session.ClientId}\",\"takeover\"]");
             SendJson($"[\"admin\",\"init\",[2,2033,7],[\"Windows\",\"Chrome\",\"10\"],\"{Session.ClientId}\",true]");
+            SendJson($"[\"admin\",\"login\",\"{Session.ClientToken}\",\"{Session.ServerToken}\",\"{Session.ClientId}\",\"takeover\"]");
         }
         private void ResolveChallenge(string challenge)
         {
@@ -519,7 +522,7 @@ namespace WhatsAppLib
                                 InvokeReceiveRemainingMessagesEvent(messageData);
                             }
                         }
-                        else if(item.Content is byte[] bs)
+                        else if (item.Content is byte[] bs)
                         {
                             InvokeReceiveRemainingMessagesEvent(bs);
                         }
@@ -552,6 +555,11 @@ namespace WhatsAppLib
         private void InvokeReceiveRemainingMessagesEvent(byte[] data)
         {
             InvokeReceiveRemainingMessagesEvent(ReceiveModel.GetReceiveModel(data));
+        }
+
+        public void Dispose()
+        {
+            _webSocket.CloseAsync(WebSocketCloseStatus.Empty, null, CancellationToken.None);
         }
         #endregion
     }
