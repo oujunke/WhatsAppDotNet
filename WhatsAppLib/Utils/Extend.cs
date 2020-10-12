@@ -1,9 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace WhatsAppLib.Utils
 {
@@ -26,7 +30,7 @@ namespace WhatsAppLib.Utils
         /// </summary>
         /// <param name="dateTime"></param>
         /// <returns></returns>
-        public static long GetTimeStampLong(this DateTime dateTime)
+        public static long GetTimeStampInt(this DateTime dateTime)
         {
             return ((dateTime.ToUniversalTime().Ticks - 621355968000000000) / 10000000);
         }
@@ -157,6 +161,64 @@ namespace WhatsAppLib.Utils
         public static byte[] AesCbcDecrypt(this byte[] data, byte[] key)
         {
             return AesCbcDecrypt(data.Skip(16).ToArray(), key, data.Take(16).ToArray());
+        }
+        public static async Task<MemoryStream> GetStream(this string url, WebProxy webProxy = null)
+        {
+            MemoryStream memory = new MemoryStream();
+            HttpClientHandler Handler = new HttpClientHandler { Proxy = webProxy };
+            using (var client = new HttpClient(Handler))
+            {
+                var message = new HttpRequestMessage(HttpMethod.Get, url)
+                {
+                    Version = HttpVersion.Version20,
+                };
+                message.Headers.Add("user-agent", "Mozilla/5.0 (MSIE 10.0; Windows NT 6.1; Trident/5.0)");
+                var response = await client.SendAsync(message);
+                if (response.IsSuccessStatusCode)
+                {
+                    await response.Content.CopyToAsync(memory);
+                }
+            }
+            return memory;
+        }
+        public static async Task<MemoryStream> Post(this string url, byte[] data, WebProxy webProxy = null, Dictionary<string, string> head = null)
+        {
+            MemoryStream memory = new MemoryStream();
+            HttpClientHandler Handler = new HttpClientHandler { Proxy = webProxy };
+            using (var client = new HttpClient(Handler))
+            {
+                var message = new HttpRequestMessage(HttpMethod.Get, url)
+                {
+                    Version = HttpVersion.Version20,
+                };
+                message.Content = new ByteArrayContent(data);
+                message.Headers.Add("user-agent", "Mozilla/5.0 (MSIE 10.0; Windows NT 6.1; Trident/5.0)");
+                if (head != null)
+                {
+                    foreach (var item in head)
+                    {
+                        message.Headers.Add(item.Key, item.Value);
+                    }
+                }
+                var response = await client.SendAsync(message);
+                if (response.IsSuccessStatusCode)
+                {
+                    await response.Content.CopyToAsync(memory);
+                }
+            }
+            return memory;
+        }
+        public static async Task<string> PostHtml(this string url, byte[] data, WebProxy webProxy = null, Dictionary<string, string> head = null, Encoding encoding = null)
+        {
+            var memory = await Post(url, data, webProxy, head);
+            if (encoding == null)
+            {
+                return Encoding.UTF8.GetString(memory.ToArray());
+            }
+            else
+            {
+                return encoding.GetString(memory.ToArray());
+            }
         }
     }
 }

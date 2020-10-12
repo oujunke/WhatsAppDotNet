@@ -49,7 +49,15 @@ namespace WhatsAppLib
         /// <summary>
         /// Http代理  Http Proxy
         /// </summary>
-        public IWebProxy WebProxy { set => _webSocket.Options.Proxy = value; get => _webSocket?.Options.Proxy; }
+        public WebProxy WebProxy
+        {
+            set
+            {
+                _webSocket.Options.Proxy = value;
+                _webProxy = value;
+            }
+            get => _webProxy;
+        }
         /// <summary>
         /// 登录Session   Login Session
         /// </summary>
@@ -57,6 +65,7 @@ namespace WhatsAppLib
         #endregion
         #region 私有成员    private member
         private ClientWebSocket _webSocket;
+        private WebProxy _webProxy;
         private object _sendObj = new object();
         private int _msgCount;
         private bool _loginSuccess;
@@ -84,6 +93,7 @@ namespace WhatsAppLib
         }
         public WhatsApp(WebProxy webProxy) : this()
         {
+            _webProxy = webProxy;
             _webSocket.Options.Proxy = webProxy;
         }
         public WhatsApp(SessionInfo session) : this()
@@ -129,7 +139,7 @@ namespace WhatsAppLib
         /// <param name="data">图片字节码</param>
         /// <param name="caption">消息名称</param>
         /// <returns></returns>
-        public string SendImage(string remoteJid, byte[] data, string caption = null)
+        public string SendImage(string remoteJid, byte[] data, string caption = null, Action<ReceiveModel> act = null)
         {
             var uploadResponse = Upload(data, MediaImage);
             if (uploadResponse == null)
@@ -155,9 +165,9 @@ namespace WhatsAppLib
                         FileLength = uploadResponse.FileLength
                     }
                 }
-            });
+            }, act);
         }
-        public string SendText(string remoteJid, string text)
+        public string SendText(string remoteJid, string text, Action<ReceiveModel> act = null)
         {
             return SendProto(new WebMessageInfo()
             {
@@ -169,21 +179,45 @@ namespace WhatsAppLib
                 {
                     Conversation = text
                 }
-            });
+            }, act);
+        }
+        public string LoadMediaInfo(string jid, string messageId, string owner, Action<ReceiveModel> act = null)
+        {
+            return SendQuery("media", jid, messageId, "", owner, "", 0, 0, act);
         }
         #endregion
         #region 私有方法    private method
         private void HandleMessage(WebMessageInfo webMessage)
         {
             var message = webMessage.Message;
-            if (webMessage.MessageTimestamp <= (ulong)(DateTime.Now.GetTimeStampLong() / 1000 - 240))
+            if (webMessage.MessageTimestamp <= (ulong)(DateTime.Now.GetTimeStampInt() - 240))
             {
                 return;
             }
             if (message.ImageMessage != null)
             {
-                var fileData = DownloadImage(message.ImageMessage.Url, message.ImageMessage.MediaKey.ToArray());
-                File.WriteAllBytes("test.jpg", fileData);
+                try
+                {
+                    var fileData = DownloadImage(message.ImageMessage.Url, message.ImageMessage.MediaKey.ToArray());
+                    File.WriteAllBytes("test.jpg", fileData);
+                }
+                catch (Exception ex)
+                {
+                    LoadMediaInfo(webMessage.Key.RemoteJid, webMessage.Key.Id, webMessage.Key.FromMe ? "true" : "false", rm =>
+                    {
+                        try
+                        {
+                            var fileData = DownloadImage(message.ImageMessage.Url, message.ImageMessage.MediaKey.ToArray());
+                            File.WriteAllBytes("test.jpg", fileData);
+                        }
+                        catch
+                        {
+                            Console.WriteLine($"图片下载失败");
+                            return;
+                        }
+                    });
+                }
+
             }
             else if (message.HasConversation)
             {
@@ -199,18 +233,9 @@ namespace WhatsAppLib
         }
         private byte[] Download(string url, byte[] mediaKey, string info)
         {
-            var webClient = new XWebClient()
-            {
-                Encoding = Encoding.UTF8,
-                Proxy = WebProxy,
-                UseDefaultCredentials = false
-            };
-            var stream = webClient.OpenRead($"{url}");
-            var memory = new MemoryStream();
-            stream.CopyTo(memory);
-            stream.Close();
+            var memory = url.GetStream(WebProxy);
             var mk = GetMediaKeys(mediaKey, info);
-            var data = memory.ToArray();
+            var data = memory.Result.ToArray();
             var file = data.Take(data.Length - 10).ToArray();
             var mac = data.Skip(file.Length).ToArray();
             var sign = (mk.Iv.Concat(file).ToArray()).HMACSHA256_Encrypt(mk.MacKey);
@@ -221,6 +246,7 @@ namespace WhatsAppLib
             }
             var fileData = file.AesCbcDecrypt(mk.CipherKey, mk.Iv);
             return fileData;
+
         }
         private MediaKeys GetMediaKeys(byte[] mediaKey, string info)
         {
@@ -246,27 +272,26 @@ namespace WhatsAppLib
             }
             var token = Convert.ToBase64String(uploadResponse.FileEncSha256).Replace("+", "-").Replace("/", "_");
             var url = $"https://{mediaConnResponse.MediaConn.Hosts[0].Hostname}{MediaTypeMap[info]}/{token}?auth={mediaConnResponse.MediaConn.Auth}&token={token}";
-            WebClient webClient = new XWebClient
-            {
-                Encoding = Encoding.UTF8,
-                Proxy = WebProxy
-            };
-            webClient.Headers["Origin"] = "https://web.whatsapp.com";
-            webClient.Headers["Referer"] = "https://web.whatsapp.com/";
-            var responseByte = webClient.UploadData(url, joinData);
-            var response = Encoding.UTF8.GetString(responseByte);
-            uploadResponse.DownloadUrl = response.RegexGetString("url\":\"([^\"]*)\"");
+            var response = url.PostHtml(joinData, WebProxy, new Dictionary<string, string> {
+                { "Origin","https://web.whatsapp.com" },
+                { "Referer","https://web.whatsapp.com/"}
+            });
+            //WebClient webClient = new WebClient
+            //{
+            //    Encoding = Encoding.UTF8,
+            //    Proxy = WebProxy
+            //};
+            //webClient.Headers["Origin"] = "https://web.whatsapp.com";
+            //webClient.Headers["Referer"] = "https://web.whatsapp.com/";
+            //var responseByte = webClient.UploadData(url, joinData);
+            //var response = Encoding.UTF8.GetString(responseByte);
+            uploadResponse.DownloadUrl = response.Result.RegexGetString("url\":\"([^\"]*)\"");
             return uploadResponse;
         }
         private MediaConnResponse QueryMediaConn()
         {
             MediaConnResponse connResponse = null;
-            var tag = SendJson("[\"query\",\"mediaConn\"]");
-            _snapReceiveDictionary.Add(tag, rm =>
-            {
-                connResponse = JsonConvert.DeserializeObject<MediaConnResponse>(rm.Body);
-                return true;
-            });
+            SendJson("[\"query\",\"mediaConn\"]", rm => connResponse = JsonConvert.DeserializeObject<MediaConnResponse>(rm.Body));
             for (int i = 0; i < 1000; i++)
             {
                 if (connResponse != null)
@@ -277,8 +302,18 @@ namespace WhatsAppLib
             }
             return connResponse;
         }
-
-        private string SendProto(WebMessageInfo webMessage)
+        private void AddCallback(string tag, Action<ReceiveModel> act)
+        {
+            if (act != null)
+            {
+                _snapReceiveDictionary.Add(tag, rm =>
+                {
+                    act(rm);
+                    return true;
+                });
+            }
+        }
+        private string SendProto(WebMessageInfo webMessage, Action<ReceiveModel> act = null)
         {
             if (webMessage.Key.Id.IsNullOrWhiteSpace())
             {
@@ -286,7 +321,7 @@ namespace WhatsAppLib
             }
             if (webMessage.MessageTimestamp == 0)
             {
-                webMessage.MessageTimestamp = (ulong)DateTime.Now.GetTimeStampLong();
+                webMessage.MessageTimestamp = (ulong)DateTime.Now.GetTimeStampInt();
             }
             webMessage.Key.FromMe = true;
             webMessage.Status = WebMessageInfo.Types.WEB_MESSAGE_INFO_STATUS.Error;
@@ -299,20 +334,70 @@ namespace WhatsAppLib
                 },
                 Content = new List<WebMessageInfo> { webMessage }
             };
-            WriteBinary(n, webMessage.Key.Id);
+            AddCallback(webMessage.Key.Id, act);
+            WriteBinary(n, WriteBinaryType.Message, webMessage.Key.Id);
             return webMessage.Key.Id;
         }
-        private void WriteBinary(Node node, string messageTag)
+        private void WriteBinary(Node node, WriteBinaryType binaryType, string messageTag)
         {
             var data = EncryptBinaryMessage(node);
             var bs = new List<byte>(Encoding.UTF8.GetBytes($"{messageTag},"));
-            bs.Add(16);
+            bs.Add((byte)binaryType);
             bs.Add(128);
             bs.AddRange(data);
             lock (_sendObj)
             {
                 _webSocket.SendAsync(new ArraySegment<byte>(bs.ToArray()), WebSocketMessageType.Binary, true, CancellationToken.None).Wait();
             }
+        }
+        private string SendQuery(string t, string jid, string messageId, string kind, string owner, string search, int count, int page, Action<ReceiveModel> act = null)
+        {
+            var msgCount = Interlocked.Increment(ref _msgCount) - 1;
+            var tag = $"{DateTime.Now.GetTimeStampInt()}.--{msgCount}";
+            AddCallback(tag, act);
+            var n = new Node
+            {
+                Description = "query",
+                Attributes = new Dictionary<string, string> {
+                    { "type", t },
+                    {"epoch",msgCount.ToString() }//"5" }//
+                },
+            };
+            if (!jid.IsNullOrWhiteSpace())
+            {
+                n.Attributes.Add("jid", jid);
+            }
+            if (!messageId.IsNullOrWhiteSpace())
+            {
+                n.Attributes.Add("index", messageId);
+            }
+            if (!kind.IsNullOrWhiteSpace())
+            {
+                n.Attributes.Add("kind", kind);
+            }
+            if (!owner.IsNullOrWhiteSpace())
+            {
+                n.Attributes.Add("owner", owner);
+            }
+            if (!search.IsNullOrWhiteSpace())
+            {
+                n.Attributes.Add("search", search);
+            }
+            if (count > 0)
+            {
+                n.Attributes.Add("count", count.ToString());
+            }
+            if (page > 0)
+            {
+                n.Attributes.Add("page", page.ToString());
+            }
+            var msgType = WriteBinaryType.Group;
+            if (t == "media")
+            {
+                msgType = WriteBinaryType.QueryMedia;
+            }
+            WriteBinary(n, msgType, tag);
+            return tag;
         }
         private byte[] EncryptBinaryMessage(Node node)
         {
@@ -417,9 +502,10 @@ namespace WhatsAppLib
             });
 
         }
-        public string SendJson(string str)
+        public string SendJson(string str, Action<ReceiveModel> act = null)
         {
-            var tag = $"{DateTime.Now.GetTimeStampLong() / 1000}.--{Interlocked.Increment(ref _msgCount) - 1}";
+            var tag = $"{DateTime.Now.GetTimeStampInt()}.--{Interlocked.Increment(ref _msgCount) - 1}";
+            AddCallback(tag, act);
             Send($"{tag},{str}");
             return tag;
         }
@@ -439,7 +525,17 @@ namespace WhatsAppLib
             Task.Factory.StartNew(() =>
             {
                 var receiveResult = _webSocket.ReceiveAsync(receiveModel.ReceiveData, CancellationToken.None);
-                receiveResult.Wait();
+                try
+                {
+                    receiveResult.Wait();
+                }
+                catch
+                {
+                    Console.WriteLine("连接断开");
+                    _webSocket.Dispose();
+                    return;
+                }
+
                 if (receiveResult.Result.EndOfMessage)
                 {
                     Receive(ReceiveModel.GetReceiveModel());
@@ -494,14 +590,40 @@ namespace WhatsAppLib
                             {
                                 if (ms.Message.ImageMessage != null && ReceiveImageMessageEvent != null)
                                 {
-                                    var fileData = DownloadImage(ms.Message.ImageMessage.Url, ms.Message.ImageMessage.MediaKey.ToArray());
-                                    ReceiveImageMessageEvent.Invoke(new Messages.ImageMessage
+                                    try
                                     {
-                                        MessageTimestamp = ms.MessageTimestamp,
-                                        RemoteJid = ms.Key.RemoteJid,
-                                        Text = ms.Message.ImageMessage.Caption,
-                                        ImageData = fileData
-                                    });
+                                        var fileData = DownloadImage(ms.Message.ImageMessage.Url, ms.Message.ImageMessage.MediaKey.ToArray());
+                                        ReceiveImageMessageEvent.Invoke(new Messages.ImageMessage
+                                        {
+                                            MessageTimestamp = ms.MessageTimestamp,
+                                            RemoteJid = ms.Key.RemoteJid,
+                                            Text = ms.Message.ImageMessage.Caption,
+                                            ImageData = fileData
+                                        });
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        LoadMediaInfo(ms.Key.RemoteJid, ms.Key.Id, ms.Key.FromMe ? "true" : "false", _ =>
+                                        {
+                                            try
+                                            {
+                                                var fileData = DownloadImage(ms.Message.ImageMessage.Url, ms.Message.ImageMessage.MediaKey.ToArray());
+                                                ReceiveImageMessageEvent.Invoke(new Messages.ImageMessage
+                                                {
+                                                    MessageTimestamp = ms.MessageTimestamp,
+                                                    RemoteJid = ms.Key.RemoteJid,
+                                                    Text = ms.Message.ImageMessage.Caption,
+                                                    ImageData = fileData
+                                                });
+                                            }
+                                            catch
+                                            {
+                                                Console.WriteLine($"图片下载失败");
+                                                return;
+                                            }
+                                        });
+                                    }
+
                                 }
                                 else if (ms.Message.HasConversation && ReceiveTextMessageEvent != null)
                                 {
