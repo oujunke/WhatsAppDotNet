@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 using WhatsAppLib.Models;
+using WhatsAppLib.Utils;
 using static WhatsAppLib.Serialization.BinaryDecoder;
 
 namespace WhatsAppLib.Serialization
@@ -47,7 +48,7 @@ namespace WhatsAppLib.Serialization
                     }
                     break;
                 default:
-                    Console.WriteLine("cannot write child of type:"+obj);
+                    LogUtil.Warn("cannot write child of type:"+obj);
                     break;
             }
         }
@@ -99,7 +100,7 @@ namespace WhatsAppLib.Serialization
                     var dictionaryIndex = singleByteOverflow >> 8;
                     if (dictionaryIndex < 0 || dictionaryIndex > 3)
                     {
-                        Console.WriteLine("double byte dictionary token out of range:", str);
+                        LogUtil.Warn("double byte dictionary token out of range:"+str);
                         return;
                     }
                     WriteToken((int)ReadStringTag.DICTIONARY_0 + dictionaryIndex);
@@ -126,7 +127,7 @@ namespace WhatsAppLib.Serialization
             {
                 if (!WritePackedBytesImpl(str, (int)ReadStringTag.HEX_8))
                 {
-                    Console.WriteLine("WritePackedBytes fail");
+                    LogUtil.Warn("WritePackedBytes fail");
                 }
             }
         }
@@ -135,7 +136,7 @@ namespace WhatsAppLib.Serialization
             var numBytes = str.Length;
             if (numBytes > 254)
             {
-                //Console.WriteLine("too many bytes to pack:" + numBytes);
+                LogUtil.Warn("too many bytes to pack:" + numBytes);
                 return false;
             }
             PushByte(dataType);
@@ -197,7 +198,7 @@ namespace WhatsAppLib.Serialization
             }
             else
             {
-                //Console.WriteLine($"invalid pack type {packType} for byte pair:{part1} / {part2}");
+                LogUtil.Warn($"invalid pack type {packType} for byte pair:{part1} / {part2}");
                 return -1;
             }
         }
@@ -205,7 +206,7 @@ namespace WhatsAppLib.Serialization
         {
             if (str.Length > 1)
             {
-                Console.WriteLine("PackNibble str length:" + str.Length);
+                LogUtil.Warn("PackNibble str length:" + str.Length);
                 return -1;
             }
             else if (str[0] >= '0' && str[0] <= '9')
@@ -224,14 +225,14 @@ namespace WhatsAppLib.Serialization
             {
                 return 15;
             }
-            //Console.WriteLine("invalid string to pack as nibble:" + str);
+            LogUtil.Warn("invalid string to pack as nibble:" + str);
             return -1;
         }
         private int PackHex(string str)
         {
             if (str.Length > 1)
             {
-                //Console.WriteLine("PackHex str length:" + str.Length);
+                LogUtil.Warn("PackHex str length:" + str.Length);
                 return -1;
             }
             var value = str[0];
@@ -244,7 +245,7 @@ namespace WhatsAppLib.Serialization
             {
                 return 15;
             }
-            //Console.WriteLine("invalid string to pack as hex: ", str);
+            LogUtil.Warn("invalid string to pack as hex: "+ str);
             return -1;
         }
         private void WriteStringRaw(string str)
@@ -256,7 +257,7 @@ namespace WhatsAppLib.Serialization
         {
             if (length > int.MaxValue)
             {
-                Console.WriteLine("length is too large:" + length);
+                LogUtil.Error("length is too large:" + length);
             }
             else if (length >= (1 << 20))
             {
@@ -282,7 +283,7 @@ namespace WhatsAppLib.Serialization
             }
             else if (token <= 500)
             {
-                Console.WriteLine("invalid token: " + token);
+                LogUtil.Error("invalid token: " + token);
             }
         }
         private void WriteListStart(int listSize)

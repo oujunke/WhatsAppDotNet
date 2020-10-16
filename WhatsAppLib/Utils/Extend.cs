@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Yove.Proxy;
 
 namespace WhatsAppLib.Utils
 {
@@ -25,6 +26,20 @@ namespace WhatsAppLib.Utils
             Regex r = new Regex(pattern, RegexOptions.None);
             return r.Match(str).Groups[retuenIndex].Value;
         }
+
+        public static string UrlEncode(this string str)
+        {
+            return System.Web.HttpUtility.UrlEncode(str);
+        }
+        /// <summary>
+        /// 获取时间戳
+        /// </summary>
+        /// <param name="dateTime"></param>
+        /// <returns></returns>
+        public static long GetTimeStampLong(this DateTime dateTime)
+        {
+            return (dateTime.ToUniversalTime().Ticks - 621355968000000000) / 10000;
+        }
         /// <summary>
         /// 获取时间戳
         /// </summary>
@@ -32,9 +47,8 @@ namespace WhatsAppLib.Utils
         /// <returns></returns>
         public static long GetTimeStampInt(this DateTime dateTime)
         {
-            return ((dateTime.ToUniversalTime().Ticks - 621355968000000000) / 10000000);
+            return GetTimeStampLong(dateTime) / 1000;
         }
-
         /// <summary>
         /// 时间戳转时间
         /// </summary>
@@ -162,7 +176,8 @@ namespace WhatsAppLib.Utils
         {
             return AesCbcDecrypt(data.Skip(16).ToArray(), key, data.Take(16).ToArray());
         }
-        public static async Task<MemoryStream> GetStream(this string url, WebProxy webProxy = null)
+
+        public static async Task<MemoryStream> GetStream(this string url, ProxyClient webProxy =null)
         {
             MemoryStream memory = new MemoryStream();
             HttpClientHandler Handler = new HttpClientHandler { Proxy = webProxy };
@@ -181,13 +196,13 @@ namespace WhatsAppLib.Utils
             }
             return memory;
         }
-        public static async Task<MemoryStream> Post(this string url, byte[] data, WebProxy webProxy = null, Dictionary<string, string> head = null)
+        public static async Task<MemoryStream> Post(this string url,byte[] data, ProxyClient webProxy = null,Dictionary<string,string> head=null)
         {
             MemoryStream memory = new MemoryStream();
             HttpClientHandler Handler = new HttpClientHandler { Proxy = webProxy };
             using (var client = new HttpClient(Handler))
             {
-                var message = new HttpRequestMessage(HttpMethod.Get, url)
+                var message = new HttpRequestMessage(HttpMethod.Post, url)
                 {
                     Version = HttpVersion.Version20,
                 };
@@ -208,9 +223,9 @@ namespace WhatsAppLib.Utils
             }
             return memory;
         }
-        public static async Task<string> PostHtml(this string url, byte[] data, WebProxy webProxy = null, Dictionary<string, string> head = null, Encoding encoding = null)
+        public static async Task<string> PostHtml(this string url, byte[] data, ProxyClient webProxy = null, Dictionary<string, string> head = null,Encoding encoding=null)
         {
-            var memory = await Post(url, data, webProxy, head);
+            var memory =await Post(url,data,webProxy,head);
             if (encoding == null)
             {
                 return Encoding.UTF8.GetString(memory.ToArray());

@@ -14,6 +14,7 @@ namespace WhatsAppLib.Models
         public string Tag { private set; get; }
         public string Body { private set; get; }
         public WebSocketMessageType MessageType { set; get; }
+        internal Node Nodes { set; get; }
         internal ArraySegment<byte> ReceiveData { set; get; }
         private List<byte> _bs = new List<byte>();
         private ReceiveModel(int length)

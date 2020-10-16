@@ -18,5 +18,14 @@ namespace WhatsAppLib.Messages
         /// 消息文字
         /// </summary>
         public string Text { set; get; }
+        /// <summary>
+        /// 消息ID
+        /// </summary>
+        public string MsgId { set; get; }
+        /// <summary>
+        /// 是否是本人发送消息
+        /// </summary>
+        public bool FromMe { set; get; }
+        public int Status { set; get; }
     }
 }

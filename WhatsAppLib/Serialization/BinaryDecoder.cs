@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using WhatsAppLib.Models;
+using WhatsAppLib.Utils;
 
 namespace WhatsAppLib.Serialization
 {
@@ -32,7 +33,7 @@ namespace WhatsAppLib.Serialization
     "invite", "gif", "vcard", "frequent", "privacy", "blacklist", "whitelist",
     "verify", "location", "document", "elapsed", "revoke_invite", "expiration",
     "unsubscribe", "disable", "vname", "old_jid", "new_jid", "announcement",
-    "locked", "prop", "label", "color", "call", "offer", "call-id" };
+    "locked", "prop", "label", "color", "call", "offer", "call-id","quick_reply","sticker","pay_t","accept","reject","sticker_pack","invalid","canceled","missed","connected","result","audio","video","recent" };
 
         public BinaryDecoder(byte[] bs)
         {
@@ -96,7 +97,7 @@ namespace WhatsAppLib.Serialization
                 case 249:
                     return ReadInt16();
                 default:
-                    Console.WriteLine("readListSize with unknown tag");
+                    LogUtil.Warn("readListSize with unknown tag");
                     return 0;
             }
         }
@@ -165,7 +166,7 @@ namespace WhatsAppLib.Serialization
             {
                 return ReadPacked8(tag);
             }
-            Console.WriteLine("invalid string with tag" + tag);
+            LogUtil.Warn("invalid string with tag" + tag);
             return "";
         }
         public string ReadPacked8(int tag)
@@ -194,14 +195,14 @@ namespace WhatsAppLib.Serialization
                 case (int)ReadStringTag.HEX_8:
                     return UnpackHex(value);
             }
-            Console.WriteLine("UnpackByte Fail");
+            LogUtil.Warn("UnpackByte Fail");
             return "";
         }
         public string UnpackNibble(int value)
         {
             if (value < 0 || value > 15)
             {
-                Console.WriteLine("unpackNibble with value" + value);
+                LogUtil.Warn("unpackNibble with value" + value);
                 return "";
             }
             else if (value == 10)
@@ -225,7 +226,7 @@ namespace WhatsAppLib.Serialization
         {
             if (value < 0 || value > 15)
             {
-                Console.WriteLine("unpackHex with value" + value);
+                LogUtil.Warn("unpackHex with value" + value);
                 return "";
             }
             else if (value < 10)
@@ -245,13 +246,13 @@ namespace WhatsAppLib.Serialization
             var descrTag = ReadInt8();
             if (descrTag == (int)ReadStringTag.STREAM_END)
             {
-                Console.WriteLine("unexpected stream end");
+                LogUtil.Warn("unexpected stream end");
                 return null;
             }
             ret.Description = ReadString(descrTag);
             if (listSize == 0 || string.IsNullOrWhiteSpace(ret.Description))
             {
-                Console.WriteLine("invalid Node");
+                LogUtil.Warn("invalid Node");
                 return null;
             }
             ret.Attributes = ReadAttributes((listSize - 1) >> 1);

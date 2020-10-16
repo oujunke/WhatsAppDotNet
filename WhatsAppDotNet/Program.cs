@@ -11,7 +11,7 @@ namespace WhatsAppDotNet
     {
         static void Main(string[] args)
         {
-            WhatsApp whatsApp = new WhatsApp(new System.Net.WebProxy("127.0.0.1", 8888));
+            WhatsApp whatsApp = new WhatsApp(new Yove.Proxy.ProxyClient("127.0.0.1", 8888,Yove.Proxy.ProxyType.Http));
             if (File.Exists("Session.ini"))
             {
                 whatsApp.Session = JsonConvert.DeserializeObject<SessionInfo>(File.ReadAllText("Session.ini"));
