@@ -1,5 +1,6 @@
 ﻿using AronParker.Hkdf;
 using Elliptic;
+using Gma.QrCodeNet.Encoding;
 using Google.Protobuf;
 using Newtonsoft.Json;
 using Proto;
@@ -547,6 +548,7 @@ namespace WhatsAppLib
         {
             Task.Factory.StartNew(async () =>
             {
+                await Connect();
                 var clientId = GetRandom(16);
                 Session.ClientId = Convert.ToBase64String(clientId);
                 var tag = SendJson($"[\"admin\",\"init\",[2,2033,7],[\"Windows\",\"Chrome\",\"10\"],\"{Session.ClientId}\",true]");
@@ -776,7 +778,7 @@ namespace WhatsAppLib
             }
             _snapReceiveDictionary.Add(tag, func);
         }
-
+       
         #endregion
     }
 }
