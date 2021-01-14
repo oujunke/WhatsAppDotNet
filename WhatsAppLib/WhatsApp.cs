@@ -115,6 +115,10 @@ namespace WhatsAppLib
         #region 公有方法    public method
         public async Task<bool> Connect()
         {
+            if (_webSocket.State == WebSocketState.Open || _webSocket.State == WebSocketState.Connecting)
+            {
+                await _webSocket.CloseAsync(WebSocketCloseStatus.Empty, "Close", CancellationToken.None);
+            }
             await _webSocket.ConnectAsync(new Uri("wss://web.whatsapp.com/ws"), CancellationToken.None);
             Receive(ReceiveModel.GetReceiveModel());
             Send("?,,");
@@ -123,9 +127,13 @@ namespace WhatsAppLib
         /// <summary>
         /// 登录,需要监听LoginScanCodeEvent,和LoginSuccessEvent事件  To log in, you need to monitor the LoginScanCodeEvent and LoginSuccessEvent events
         /// </summary>
-        public void Login()
+        public async void Login()
         {
             _snapReceiveDictionary.Clear();
+            if(! await Connect())
+            {
+                throw new Exception("Connect Error");
+            }
             if (Session == null)
             {
                 Session = new SessionInfo();
